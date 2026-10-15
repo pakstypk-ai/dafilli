@@ -1,27 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import {
-  Loader2,
-  Clock,
-  ChefHat,
-  CheckCircle2,
-  Phone,
-  MapPin,
-  Utensils,
-  ShoppingBasket,
-  Bike,
-  RefreshCw,
-  Trash2,
-  Receipt as ReceiptIcon,
-  Banknote,
-  Wallet,
-  Plus,
-  Minus,
-  X,
-  ShoppingBag,
-  Printer,
-  Bell,
-  Pencil,
-} from 'lucide-react';
+import { Loader as Loader2, Clock, ChefHat, CircleCheck as CheckCircle2, Phone, MapPin, Utensils, ShoppingBasket, Bike, RefreshCw, Trash as Trash2, Receipt as ReceiptIcon, Banknote, Wallet, Plus, Minus, X, ShoppingBag, Printer, Bell, Pencil } from 'lucide-react';
 import { supabase, type Order, type Product, type Category, type OrderItem } from '@/lib/supabase';
 import { getCartItemId } from '@/context/CartContext';
 import { formatCurrency } from '@/lib/format';
@@ -94,6 +72,9 @@ export function AdminOrders({ refreshTrigger, onOrdersChanged }: AdminOrdersProp
   const [editCart, setEditCart] = useState<ManualCartItem[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editNotes, setEditNotes] = useState('');
+  const [editDiscountType, setEditDiscountType] = useState<'percent' | 'flat'>('percent');
+  const [editDiscountValue, setEditDiscountValue] = useState('');
+  const [editShowDiscount, setEditShowDiscount] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,6 +261,9 @@ export function AdminOrders({ refreshTrigger, onOrdersChanged }: AdminOrdersProp
   const openEdit = (order: Order) => {
     setEditOrder(order);
     setEditNotes(order.notes ?? '');
+    setEditDiscountType((order.total_discount_type as 'percent' | 'flat') || 'percent');
+    setEditDiscountValue(order.total_discount_value ? String(order.total_discount_value) : '');
+    setEditShowDiscount(Number(order.total_discount_amount) > 0);
     setEditCart(order.items.map((item, idx) => ({
       id: `${item.id}-${idx}`,
       product_id: item.id,
@@ -293,7 +277,12 @@ export function AdminOrders({ refreshTrigger, onOrdersChanged }: AdminOrdersProp
 
   const editSubtotal = editCart.reduce((s, i) => s + i.price * i.quantity, 0);
   const editTax = editCart.reduce((s, i) => s + i.price * i.quantity * (i.tax_percentage / 100), 0);
-  const editTotal = editSubtotal + editTax;
+  const editDiscountAmount = useMemo(() => {
+    const val = Number(editDiscountValue) || 0;
+    if (editDiscountType === 'percent') return Math.min(editSubtotal * (val / 100), editSubtotal);
+    return Math.min(val, editSubtotal);
+  }, [editDiscountType, editDiscountValue, editSubtotal]);
+  const editTotal = Math.max(0, editSubtotal - editDiscountAmount + editTax);
 
   const incrementEditItem = (id: string) => setEditCart((prev) => prev.map((i) => i.id === id ? { ...i, quantity: i.quantity + 1 } : i));
   const decrementEditItem = (id: string) => setEditCart((prev) => prev.map((i) => i.id === id ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0));
@@ -319,6 +308,9 @@ export function AdminOrders({ refreshTrigger, onOrdersChanged }: AdminOrdersProp
         total: editTotal,
         final_total: editTotal,
         notes: editNotes,
+        total_discount_type: editDiscountAmount > 0 ? editDiscountType : '',
+        total_discount_value: Number(editDiscountValue) || 0,
+        total_discount_amount: editDiscountAmount,
         kot_modified: wasKotPrinted ? true : editOrder.kot_modified,
       }).eq('id', editOrder.id);
       if (error) throw error;
@@ -1239,7 +1231,27 @@ export function AdminOrders({ refreshTrigger, onOrdersChanged }: AdminOrdersProp
 
             <div className="space-y-1.5 text-sm border-t border-stone-100 pt-3 mb-4">
               <div className="flex justify-between text-stone-600"><span>Subtotal</span><span>{formatCurrency(editSubtotal)}</span></div>
+              {editDiscountAmount > 0 && (
+                <div className="flex justify-between text-green-600"><span>Discount</span><span>-{formatCurrency(editDiscountAmount)}</span></div>
+              )}
               <div className="flex justify-between text-stone-600"><span>Tax</span><span>{formatCurrency(editTax)}</span></div>
+
+              {/* Discount controls */}
+              {!editShowDiscount ? (
+                <button onClick={() => setEditShowDiscount(true)} className="text-xs text-sage-600 font-semibold pt-1 hover:text-sage-700">+ Add Discount</button>
+              ) : (
+                <div className="bg-stone-50 rounded-lg p-2.5 mt-1 space-y-2">
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setEditDiscountType('percent')} className={`flex-1 py-1.5 rounded-md text-xs font-semibold ${editDiscountType === 'percent' ? 'bg-sage-900 text-sage-50' : 'bg-white border border-stone-200 text-stone-600'}`}>% Percent</button>
+                    <button onClick={() => setEditDiscountType('flat')} className={`flex-1 py-1.5 rounded-md text-xs font-semibold ${editDiscountType === 'flat' ? 'bg-sage-900 text-sage-50' : 'bg-white border border-stone-200 text-stone-600'}`}>Rs Flat</button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" value={editDiscountValue} onChange={(e) => setEditDiscountValue(e.target.value)} placeholder={editDiscountType === 'percent' ? '0%' : 'Rs 0'} className="w-full px-2.5 py-1.5 rounded-md border border-stone-200 text-sm outline-none focus:border-sage-400" />
+                    <button onClick={() => { setEditDiscountValue(''); setEditShowDiscount(false); }} className="text-stone-400 hover:text-red-500 p-1"><X className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between font-bold text-stone-900 pt-1.5 border-t border-stone-100"><span>Total</span><span className="text-sage-900">{formatCurrency(editTotal)}</span></div>
             </div>
 

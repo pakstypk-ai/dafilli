@@ -3,4 +3,5 @@ export const siteConfig = {
   heroTagline: 'Freshly Brewed Chai, Handcrafted Coffee & Pure Juices — Sip the Good Times!',
   whatsappNumber: '' as string,
   adminPassword: 'D@filli@cafe0@0@',
+  waiterPosPassword: 'dafillicafe22',
 };

@@ -1,23 +1,5 @@
 import { useState } from 'react';
-import {
-  X,
-  Plus,
-  Minus,
-  Trash2,
-  ShoppingBag,
-  Utensils,
-  ShoppingBasket,
-  Bike,
-  CheckCircle2,
-  Loader2,
-  MessageCircle,
-  Lock,
-  Printer,
-  Banknote,
-  Wallet,
-  Upload,
-  CreditCard,
-} from 'lucide-react';
+import { X, Plus, Minus, Trash as Trash2, ShoppingBag, Utensils, ShoppingBasket, Bike, CircleCheck as CheckCircle2, Loader as Loader2, MessageCircle, Lock, Printer, Banknote, Wallet, Upload, CreditCard, MapPin } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { formatCurrency } from '@/lib/format';
 import { CAFE_NAME } from '@/lib/constants';
@@ -37,7 +19,7 @@ type OrderType = 'dine-in' | 'takeaway' | 'delivery';
 export function CartDrawer({ open, onClose, onOrderPlaced, qrTableNumber }: CartDrawerProps) {
   const { items, incrementItem, decrementItem, removeItem, clearCart, subtotal, taxBreakdown, totalTax, total } = useCart();
   const { whatsappNumber, isOpen, cafeAddress, deliveryEnabled, paymentConfig, serviceChargeEnabled, serviceChargePercentage } = useSettings();
-  const [orderType, setOrderType] = useState<OrderType>('dine-in');
+  const [orderType, setOrderType] = useState<OrderType>(qrTableNumber ? 'dine-in' : 'takeaway');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [tableNumber, setTableNumber] = useState('');
@@ -59,7 +41,7 @@ export function CartDrawer({ open, onClose, onOrderPlaced, qrTableNumber }: Cart
   const grandTotal = total + serviceChargeAmount;
 
   const availableOrderTypes: { value: OrderType; label: string; icon: typeof Utensils }[] = [
-    { value: 'dine-in', label: 'Dine-In', icon: Utensils },
+    ...(qrTableNumber ? [{ value: 'dine-in' as OrderType, label: 'Dine-In', icon: Utensils }] : []),
     { value: 'takeaway', label: 'Takeaway', icon: ShoppingBasket },
     ...(deliveryEnabled ? [{ value: 'delivery' as OrderType, label: 'Delivery', icon: Bike }] : []),
   ];
@@ -148,7 +130,6 @@ export function CartDrawer({ open, onClose, onOrderPlaced, qrTableNumber }: Cart
   const handleSubmit = async () => {
     if (items.length === 0) return;
 
-    // Block dine-in orders without a QR-scanned table number
     if (orderType === 'dine-in' && !qrTableNumber && !tableNumber.trim()) {
       setQrWarning(true);
       return;
@@ -211,7 +192,7 @@ export function CartDrawer({ open, onClose, onOrderPlaced, qrTableNumber }: Cart
       setPhone('');
       setTableNumber('');
       setAddress('');
-      setOrderType('dine-in');
+      setOrderType(qrTableNumber ? 'dine-in' : 'takeaway');
       setPaymentMethod('cash');
       setTransactionId('');
       setScreenshotFile(null);
@@ -411,6 +392,14 @@ export function CartDrawer({ open, onClose, onOrderPlaced, qrTableNumber }: Cart
                 </div>
               ))}
 
+              {/* QR table indicator */}
+              {qrTableNumber && (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-300 rounded-xl p-3">
+                  <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  <p className="text-sm font-semibold text-green-800">Table {qrTableNumber} — Dine-In order from QR scan</p>
+                </div>
+              )}
+
               {/* QR warning banner */}
               {qrWarning && orderType === 'dine-in' && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-center">
@@ -599,14 +588,15 @@ export function CartDrawer({ open, onClose, onOrderPlaced, qrTableNumber }: Cart
                       placeholder={qrTableNumber ? `Table ${qrTableNumber} (from QR scan)` : 'Table number *'}
                       value={qrTableNumber || tableNumber}
                       onChange={(e) => setTableNumber(e.target.value)}
+                      readOnly={!!qrTableNumber}
                       disabled={!!qrTableNumber}
                       className={`w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none transition-colors ${
                         qrTableNumber
-                          ? 'border-green-300 bg-green-50 text-green-800 font-semibold'
+                          ? 'border-green-300 bg-green-50 text-green-800 font-semibold cursor-not-allowed'
                           : errors.tableNumber
                           ? 'border-red-400 focus:border-red-500'
                           : 'border-stone-200 focus:border-sage-400'
-                      } ${qrTableNumber ? 'cursor-not-allowed' : ''}`}
+                      }`}
                     />
                     {errors.tableNumber && (
                       <p className="text-xs text-red-500 mt-1">{errors.tableNumber}</p>

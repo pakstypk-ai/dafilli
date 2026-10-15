@@ -29,6 +29,7 @@ export function useSettings() {
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig>(DEFAULT_PAYMENT_CONFIG);
   const [serviceChargeEnabled, setServiceChargeEnabled] = useState(false);
   const [serviceChargePercentage, setServiceChargePercentage] = useState(0);
+  const [qrOrderingEnabled, setQrOrderingEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const loadSettings = useCallback(async () => {
@@ -46,6 +47,7 @@ export function useSettings() {
         if (row.key === 'delivery_enabled') setDeliveryEnabled(row.value === 'true');
         if (row.key === 'service_charge_enabled') setServiceChargeEnabled(row.value === 'true');
         if (row.key === 'service_charge_percentage') setServiceChargePercentage(Number(row.value) || 0);
+        if (row.key === 'qr_ordering_enabled') setQrOrderingEnabled(row.value === 'true');
         if (row.key === 'payment_config') {
           try {
             const parsed = JSON.parse(row.value);
@@ -116,6 +118,11 @@ export function useSettings() {
     setPaymentConfig(config);
   };
 
+  const saveQrOrderingEnabled = async (enabled: boolean) => {
+    await saveSetting('qr_ordering_enabled', enabled ? 'true' : 'false');
+    setQrOrderingEnabled(enabled);
+  };
+
   const isOpen = cafeStatus === 'open';
 
   return {
@@ -131,6 +138,7 @@ export function useSettings() {
     paymentConfig,
     serviceChargeEnabled,
     serviceChargePercentage,
+    qrOrderingEnabled,
     isOpen,
     loading,
     saveWhatsatsappNumber,
@@ -140,6 +148,7 @@ export function useSettings() {
     saveDeliveryEnabled,
     saveServiceCharge,
     savePaymentConfig,
+    saveQrOrderingEnabled,
     reloadSettings: loadSettings,
   };
 }

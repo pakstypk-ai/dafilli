@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  Loader2, Plus, Minus, X, Search, Printer, ArrowLeft,
-  Utensils, ShoppingBasket, Bike, Grid3x3, ClipboardList, CheckCircle2, Clock,
-} from 'lucide-react';
+import { Loader as Loader2, Plus, Minus, X, Search, Printer, ArrowLeft, Lock, Utensils, ShoppingBasket, Bike, Grid3x3, ClipboardList, CircleCheck as CheckCircle2, Clock } from 'lucide-react';
 import { supabase, type Product, type Category, type CafeTable, type CafeSection, type Order, type OrderItem } from '@/lib/supabase';
 import { getCartItemId } from '@/context/CartContext';
 import { formatCurrency } from '@/lib/format';
+import { siteConfig } from '@/config/siteConfig';
 
 type WaiterPOSProps = {
   onBack: () => void;
@@ -28,6 +26,9 @@ const STEAK_TEMPS = ['Rare', 'Medium Rare', 'Medium', 'Medium Well', 'Well Done'
 const COMMON_MODIFIERS = ['No Ice', 'Extra Shot', 'Less Sugar', 'Extra Cheese', 'No Onion', 'Spicy', 'No Spicy'];
 
 export function WaiterPOS({ onBack }: WaiterPOSProps) {
+  const [posUnlocked, setPosUnlocked] = useState(() => sessionStorage.getItem('waiter_pos_unlocked') === 'true');
+  const [posPassword, setPosPassword] = useState('');
+  const [posError, setPosError] = useState('');
   const [sections, setSections] = useState<CafeSection[]>([]);
   const [tables, setTables] = useState<CafeTable[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -46,9 +47,6 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
   const [submitting, setSubmitting] = useState(false);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [error, setError] = useState('');
-  const [discountType, setDiscountType] = useState<'percent' | 'flat'>('percent');
-  const [discountValue, setDiscountValue] = useState('');
-  const [showDiscount, setShowDiscount] = useState(false);
 
   const loadInitial = useCallback(async () => {
     try {
@@ -119,16 +117,12 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
   const increment = (id: string) => setCart((prev) => prev.map((i) => i.id === id ? { ...i, quantity: i.quantity + 1 } : i));
   const decrement = (id: string) => setCart((prev) => prev.filter((i, idx) => i.id === id ? i.quantity > 1 ? { ...i, quantity: i.quantity - 1 } : null : prev[idx]).filter(Boolean) as PosCartItem[]);
   const removeFromCart = (id: string) => setCart((prev) => prev.filter((i) => i.id !== id));
-  const clearCart = () => { setCart([]); setSelectedTableId(null); setCustomerName(''); setDiscountValue(''); setShowDiscount(false); };
+  const updateNote = (id: string, note: string) => setCart((prev) => prev.map((i) => i.id === id ? { ...i, modifier_note: note } : i));
+  const clearCart = () => { setCart([]); setSelectedTableId(null); setCustomerName(''); };
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const tax = cart.reduce((s, i) => s + i.price * i.quantity * (i.tax_percentage / 100), 0);
-  const discountAmount = useMemo(() => {
-    const val = Number(discountValue) || 0;
-    if (discountType === 'percent') return Math.min(subtotal * (val / 100), subtotal);
-    return Math.min(val, subtotal);
-  }, [discountType, discountValue, subtotal]);
-  const total = Math.max(0, subtotal - discountAmount + tax);
+  const total = subtotal + tax;
 
   const selectedTable = tables.find((t) => t.id === selectedTableId);
 
@@ -136,6 +130,25 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
     setSelectedTableId(table.id === selectedTableId ? null : table.id);
     setOrderType('dine-in');
     setActiveTab('menu');
+  };
+
+  const handlePosUnlock = () => {
+    if (posPassword === siteConfig.waiterPosPassword) {
+      sessionStorage.setItem('waiter_pos_unlocked', 'true');
+      setPosUnlocked(true);
+      setPosError('');
+      setPosPassword('');
+    } else {
+      setPosError('Incorrect password');
+    }
+  };
+
+  const handleLockPos = () => {
+    sessionStorage.removeItem('waiter_pos_unlocked');
+    setPosUnlocked(false);
+    setCart([]);
+    setSelectedTableId(null);
+    setCustomerName('');
   };
 
   const handleSubmit = async () => {
@@ -171,9 +184,9 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
           tax,
           total,
           final_total: total,
-          total_discount_type: discountType,
-          total_discount_value: Number(discountValue) || 0,
-          total_discount_amount: discountAmount,
+          total_discount_type: 'percent',
+          total_discount_value: 0,
+          total_discount_amount: 0,
           status: 'pending_approval',
           payment_method: 'cash',
           transaction_id: null,
@@ -187,7 +200,6 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
       const newOrder = data as unknown as Order;
       setLastOrder(newOrder);
 
-      // Mark table as occupied
       if (selectedTableId) {
         await supabase
           .from('tables')
@@ -212,7 +224,47 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
     );
   }
 
-  // Last order confirmation screen
+  if (!posUnlocked) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center pt-20 px-4">
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-lg w-full max-w-sm p-8">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-16 h-16 rounded-full bg-sage-100 flex items-center justify-center mb-4">
+              <Lock className="w-8 h-8 text-sage-700" />
+            </div>
+            <h1 className="text-xl font-bold text-stone-900">Waiter POS Locked</h1>
+            <p className="text-sm text-stone-500 mt-1">Enter the password to access the POS system</p>
+          </div>
+
+          <div className="space-y-3">
+            <input
+              type="password"
+              value={posPassword}
+              onChange={(e) => { setPosPassword(e.target.value); setPosError(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handlePosUnlock(); }}
+              placeholder="Password"
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl border border-stone-200 text-sm outline-none focus:border-sage-400 text-center"
+            />
+            {posError && <p className="text-xs text-red-500 text-center">{posError}</p>}
+            <button
+              onClick={handlePosUnlock}
+              className="w-full py-3 rounded-xl bg-sage-900 text-sage-50 font-bold text-sm hover:bg-sage-800 transition-colors"
+            >
+              Unlock POS
+            </button>
+            <button
+              onClick={onBack}
+              className="w-full py-2.5 rounded-xl border border-stone-200 text-stone-600 font-semibold text-sm hover:bg-stone-100 transition-colors"
+            >
+              Back to Menu
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (lastOrder) {
     return (
       <div className="min-h-screen bg-stone-50 pt-20 md:pt-24 pb-12">
@@ -276,25 +328,37 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
             </div>
           </div>
 
-          {/* Tab switcher */}
-          <div className="flex gap-1.5 bg-white rounded-xl border border-stone-200 p-1.5">
+          <div className="flex items-center gap-2">
+            {/* Tab switcher */}
+            <div className="flex gap-1.5 bg-white rounded-xl border border-stone-200 p-1.5">
+              <button
+                onClick={() => setActiveTab('tables')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === 'tables' ? 'bg-sage-900 text-sage-50' : 'text-stone-600 hover:bg-stone-100'
+                }`}
+              >
+                <Grid3x3 className="w-4 h-4" />
+                Tables
+              </button>
+              <button
+                onClick={() => setActiveTab('menu')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === 'menu' ? 'bg-sage-900 text-sage-50' : 'text-stone-600 hover:bg-stone-100'
+                }`}
+              >
+                <ClipboardList className="w-4 h-4" />
+                Menu
+              </button>
+            </div>
+
+            {/* Lock POS button */}
             <button
-              onClick={() => setActiveTab('tables')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'tables' ? 'bg-sage-900 text-sage-50' : 'text-stone-600 hover:bg-stone-100'
-              }`}
+              onClick={handleLockPos}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-semibold text-stone-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all"
+              title="Lock POS"
             >
-              <Grid3x3 className="w-4 h-4" />
-              Tables
-            </button>
-            <button
-              onClick={() => setActiveTab('menu')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'menu' ? 'bg-sage-900 text-sage-50' : 'text-stone-600 hover:bg-stone-100'
-              }`}
-            >
-              <ClipboardList className="w-4 h-4" />
-              Menu
+              <Lock className="w-4 h-4" />
+              Lock POS
             </button>
           </div>
         </div>
@@ -482,31 +546,38 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
               ) : (
                 <div className="space-y-2">
                   {cart.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2 bg-stone-50 rounded-lg p-2.5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-stone-800 truncate">
-                          {item.name}{item.variant_name ? ` (${item.variant_name})` : ''}
-                        </p>
-                        {item.modifier_note && (
-                          <p className="text-xs text-amber-600 italic truncate">{item.modifier_note}</p>
-                        )}
-                        <p className="text-xs text-stone-500">{formatCurrency(item.price)} each</p>
-                      </div>
-                      <div className="flex items-center gap-1 bg-white rounded-full border border-stone-200">
-                        <button onClick={() => decrement(item.id)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-stone-100">
-                          <Minus className="w-3 h-3 text-stone-700" />
+                    <div key={item.id} className="bg-stone-50 rounded-lg p-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-stone-800 truncate">
+                            {item.name}{item.variant_name ? ` (${item.variant_name})` : ''}
+                          </p>
+                          <p className="text-xs text-stone-500">{formatCurrency(item.price)} each</p>
+                        </div>
+                        <div className="flex items-center gap-1 bg-white rounded-full border border-stone-200">
+                          <button onClick={() => decrement(item.id)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-stone-100">
+                            <Minus className="w-3 h-3 text-stone-700" />
+                          </button>
+                          <span className="min-w-[18px] text-center text-xs font-bold">{item.quantity}</span>
+                          <button onClick={() => increment(item.id)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-stone-100">
+                            <Plus className="w-3 h-3 text-stone-700" />
+                          </button>
+                        </div>
+                        <button onClick={() => setModifierProduct(item)} className="text-xs text-sage-600 font-semibold px-1.5 py-1 rounded hover:bg-sage-50" title="Quick modifiers">
+                          Mods
                         </button>
-                        <span className="min-w-[18px] text-center text-xs font-bold">{item.quantity}</span>
-                        <button onClick={() => increment(item.id)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-stone-100">
-                          <Plus className="w-3 h-3 text-stone-700" />
+                        <button onClick={() => removeFromCart(item.id)} className="p-1 text-stone-300 hover:text-red-500">
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <button onClick={() => setModifierProduct(item)} className="text-xs text-sage-600 font-semibold px-1.5 py-1 rounded hover:bg-sage-50" title="Add modifiers">
-                        Note
-                      </button>
-                      <button onClick={() => removeFromCart(item.id)} className="p-1 text-stone-300 hover:text-red-500">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Inline note input */}
+                      <input
+                        type="text"
+                        value={item.modifier_note}
+                        onChange={(e) => updateNote(item.id, e.target.value)}
+                        placeholder="Note / special instructions..."
+                        className="w-full mt-2 px-2.5 py-1.5 rounded-md border border-amber-200 bg-amber-50/50 text-xs outline-none focus:border-amber-400 placeholder:text-stone-400 text-stone-700"
+                      />
                     </div>
                   ))}
                 </div>
@@ -520,56 +591,10 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
                   <span>Subtotal</span>
                   <span>{formatCurrency(subtotal)}</span>
                 </div>
-                {discountAmount > 0 && (
-                  <div className="flex justify-between text-green-600">
-                    <span>Discount</span>
-                    <span>-{formatCurrency(discountAmount)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-stone-600">
                   <span>Tax</span>
                   <span>{formatCurrency(tax)}</span>
                 </div>
-
-                {/* Discount toggle */}
-                {!showDiscount ? (
-                  <button
-                    onClick={() => setShowDiscount(true)}
-                    className="text-xs text-sage-600 font-semibold pt-1 hover:text-sage-700"
-                  >
-                    + Add Discount
-                  </button>
-                ) : (
-                  <div className="bg-stone-50 rounded-lg p-2.5 mt-1 space-y-2">
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => setDiscountType('percent')}
-                        className={`flex-1 py-1.5 rounded-md text-xs font-semibold ${discountType === 'percent' ? 'bg-sage-900 text-sage-50' : 'bg-white border border-stone-200 text-stone-600'}`}
-                      >% Percent</button>
-                      <button
-                        onClick={() => setDiscountType('flat')}
-                        className={`flex-1 py-1.5 rounded-md text-xs font-semibold ${discountType === 'flat' ? 'bg-sage-900 text-sage-50' : 'bg-white border border-stone-200 text-stone-600'}`}
-                      >Rs Flat</button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={discountValue}
-                        onChange={(e) => setDiscountValue(e.target.value)}
-                        placeholder={discountType === 'percent' ? '0%' : 'Rs 0'}
-                        className="w-full px-2.5 py-1.5 rounded-md border border-stone-200 text-sm outline-none focus:border-sage-400"
-                      />
-                      <button
-                        onClick={() => { setDiscountValue(''); setShowDiscount(false); }}
-                        className="text-stone-400 hover:text-red-500 p-1"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex justify-between font-bold text-base text-stone-900 pt-1.5 border-t border-stone-100">
                   <span>Total</span>
                   <span className="text-sage-900">{formatCurrency(total)}</span>
@@ -634,7 +659,7 @@ export function WaiterPOS({ onBack }: WaiterPOSProps) {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="font-bold text-stone-900">{modifierProduct.name}</h3>
-                <p className="text-xs text-stone-500 mt-0.5">Add modifiers / notes</p>
+                <p className="text-xs text-stone-500 mt-0.5">Quick modifiers / notes</p>
               </div>
               <button onClick={() => setModifierProduct(null)} className="p-1.5 rounded-full hover:bg-stone-100">
                 <X className="w-4 h-4 text-stone-500" />
